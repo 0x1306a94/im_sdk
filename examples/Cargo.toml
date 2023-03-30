@@ -1,0 +1,21 @@
+[package]
+name = "examples"
+version = "0.0.0"
+publish = false
+authors.workspace = true
+edition.workspace = true
+
+
+[dependencies]
+tokio = {version = "1.27.0", features = ["full"]}
+
+im_net.workspace = true
+im_util.workspace = true
+
+[[example]]
+name = "sample_server"
+path = "sample_server/main.rs"
+
+[[example]]
+name = "sample_client"
+path = "sample_client/main.rs"

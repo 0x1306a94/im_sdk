@@ -8,3 +8,8 @@ edition.workspace = true
 
 [dependencies]
 im_util.workspace = true
+
+tokio = {version = "1.27.0", features = ["full"]}
+
+[dev-dependencies]
+tokio-test = "*"

@@ -176,6 +176,8 @@ impl AutoBuffer {
     }
 }
 
+unsafe impl Send for AutoBuffer {}
+
 impl From<&[u8]> for AutoBuffer {
     fn from(value: &[u8]) -> Self {
         let mut buf = AutoBuffer::default();

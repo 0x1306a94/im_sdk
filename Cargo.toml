@@ -1,7 +1,9 @@
 [workspace]
 members = [
     "im_util",
-    "im_net"
+    "im_net",
+
+    "examples",
 ]
 
 [workspace.package]

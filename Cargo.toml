@@ -3,3 +3,11 @@ members = [
     "im_util",
     "im_net"
 ]
+
+[workspace.package]
+authors = ["0x1306a94 <0x1306a94@gmail.com>"]
+edition = "2021"
+
+[workspace.dependencies]
+im_net = { path = "./im_net" }
+im_util = { path = "./im_util" }

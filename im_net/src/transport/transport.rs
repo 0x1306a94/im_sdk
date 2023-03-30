@@ -1,9 +1,10 @@
 use std::borrow::BorrowMut;
 use std::cell::RefCell;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::Mutex;
 
 use crate::codec;
 
@@ -69,13 +70,7 @@ impl Transport {
         self.long_link_resp_rx = Some(resp_rx);
         self.long_link_shutdown_tx = Some(long_link.shutdown_tx.clone());
 
-        let endpoint = self
-            .source
-            .lock()
-            .unwrap()
-            .get_long_link_endpoint()
-            .unwrap();
-
+        let endpoint = self.source.lock().await.get_long_link_endpoint().unwrap();
         tokio::spawn(async move {
             println!("start....");
             long_link.run(endpoint).await;
@@ -101,21 +96,18 @@ impl Transport {
                                 return ;
                             },
                             long_link::LongLinkResponse::Checkidentify => {
-                               match self.callback.lock() {
-                                    Ok(mut locked) => {
-                                        let mut identify_buffer = AutoBuffer::default();
-                                        let (mode, cmd_id) = locked.borrow_mut().get_long_link_identify_check_buffer(&mut identify_buffer);
-                                        match mode {
-                                            identify_mode::Mode::Now => {
-                                                 if let Some(ref tx) = self.long_link_req_tx {
-                                                   _ = tx.send(long_link::LongLinkRequest::Checkidentify((identify_buffer, cmd_id))).await;
-                                                 }
-                                            },
-                                            _ => {},
+
+                                let mut callback = self.callback.lock().await;
+                                let mut identify_buffer = AutoBuffer::default();
+                                let (mode, cmd_id) = callback.get_long_link_identify_check_buffer(&mut identify_buffer);
+                                match mode {
+                                    identify_mode::Mode::Now => {
+                                        if let Some(ref tx) = self.long_link_req_tx {
+                                            _ = tx.send(long_link::LongLinkRequest::Checkidentify((identify_buffer, cmd_id))).await;
                                         }
                                     },
-                                    Err(_) => {},
-                               }
+                                    _ => {},
+                                }
                             },
                             _ => {},
                         }
@@ -132,13 +124,7 @@ impl Transport {
     pub async fn set_long_link_endpoint(&self, endpoint: endpoint::Endpoint) {
         println!("endpoint: {:?}", endpoint);
 
-        let mut source = match self.source.lock() {
-            Ok(v) => v,
-            Err(_) => {
-                return;
-            }
-        };
-        source.borrow_mut().set_long_link_endpoint(endpoint);
+        self.source.lock().await.set_long_link_endpoint(endpoint);
     }
 }
 

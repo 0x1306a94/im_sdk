@@ -16,7 +16,7 @@ pub struct CmdId(pub u32);
 #[derive(Debug, Clone)]
 pub struct TaskId(pub u32);
 
-pub const IdentifyCheckerTaskId: TaskId = TaskId(0xFFFFFFFE);
+pub const IDENTIFY_CHECKER_TASK_ID: TaskId = TaskId(0xFFFFFFFE);
 
 pub trait Codec: Send {
     /// 编码

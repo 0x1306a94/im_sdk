@@ -1,10 +1,13 @@
 use std::borrow::Borrow;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use tokio::io::AsyncWriteExt;
-use tokio::net::tcp::{ReadHalf, WriteHalf};
+use bytes::BytesMut;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::Mutex;
 
 use super::endpoint;
 use crate::codec::long_link;
@@ -80,7 +83,7 @@ impl LongLink {
 
         _ = self.resp_tx.send(LongLinkResponse::Checkidentify).await;
 
-        let (mut read_half, mut write_half) = stream.split();
+        let (mut read_half, mut write_half) = stream.into_split();
 
         let mut recv_buffer = AutoBuffer::default();
 
@@ -106,90 +109,100 @@ impl LongLink {
                     }
                 },
                 _ = read_half.readable() => {
-                    if !self.do_read(&mut recv_buffer, &mut read_half) {
+                    if !self.do_read(&mut recv_buffer, &mut read_half).await {
                         _ = self.resp_tx.send(LongLinkResponse::Disconnected).await;
                         return;
                     }
                 },
                 _ = write_half.writable() => {
-                    self.do_write(&mut write_half);
+                    self.do_write(&mut write_half).await;
                 },
             }
         }
     }
 
-    fn do_read(&mut self, recv_buffer: &mut AutoBuffer, read_half: &mut ReadHalf) -> bool {
+    async fn do_read(
+        &mut self,
+        recv_buffer: &mut AutoBuffer,
+        read_half: &mut OwnedReadHalf,
+    ) -> bool {
         let max_size: usize = 64 * 1024;
         recv_buffer.add_capacity(max_size);
-        let mut buffer = Vec::<u8>::with_capacity(max_size);
-        match read_half.try_read(&mut buffer) {
+        let mut buffer = BytesMut::with_capacity(max_size);
+        match read_half.read_buf(&mut buffer).await {
             Ok(read_len) => {
-                return self.try_decode(recv_buffer);
+                recv_buffer.write(&buffer[..read_len]);
+                return self.try_decode(recv_buffer).await;
             }
             Err(e) => {
                 eprintln!("error: {:?}", e);
                 return false;
             }
         };
+
+        true
     }
 
-    fn do_write(&mut self, write: &mut WriteHalf) {
+    async fn do_write(&mut self, write: &mut OwnedWriteHalf) {
         if !self.identify_buffers.is_empty() {
-            self.do_write_identify(write);
+            self.do_write_identify(write).await;
             return;
         }
     }
 
-    fn do_write_identify(&mut self, write: &mut WriteHalf) {
-        match self.codec.lock() {
-            Ok(lock) => loop {
-                if !self.identify_buffers.is_empty() {
-                    let value = self.identify_buffers.remove(0);
+    async fn do_write_identify(&mut self, write: &mut OwnedWriteHalf) {
+        println!("do_write_identify...");
 
-                    let mut out_buffer = AutoBuffer::default();
-                    let extend_buffer = AutoBuffer::default();
-                    lock.borrow().encode(
-                        &value.1,
-                        &long_link::IdentifyCheckerTaskId,
-                        &value.0,
-                        &extend_buffer,
-                        &mut out_buffer,
-                    );
+        let codec = self.codec.lock().await;
 
-                    match write.try_write(&mut out_buffer.as_slice(0)) {
-                        Ok(write_len) => {
-                            println!("write len: {}", write_len);
-                        }
-                        Err(_) => {}
+        loop {
+            if !self.identify_buffers.is_empty() {
+                let value = self.identify_buffers.remove(0);
+
+                let mut out_buffer = AutoBuffer::default();
+                let extend_buffer = AutoBuffer::default();
+                codec.encode(
+                    &value.1,
+                    &long_link::IDENTIFY_CHECKER_TASK_ID,
+                    &value.0,
+                    &extend_buffer,
+                    &mut out_buffer,
+                );
+
+                let mut bytes = out_buffer.as_slice(0);
+                // let mut buffer = Vec::<u8>::with_capacity(bytes.len());
+                // buffer.extend_from_slice(bytes);
+
+                // use std::io::Cursor;
+
+                // let mut buffer = Cursor::new(Vec::new());
+                // buffer.write_all(bytes);
+
+                match write.write_buf(&mut bytes).await {
+                    Ok(write_len) => {
+                        println!("write len: {}", write_len);
                     }
+                    Err(_) => {}
                 }
-            },
-            Err(_) => {}
+            }
         }
     }
 
-    fn try_decode(&mut self, recv_buffer: &mut AutoBuffer) -> bool {
+    async fn try_decode(&mut self, recv_buffer: &mut AutoBuffer) -> bool {
         let mut body_buffer = AutoBuffer::default();
         let mut extend_buffer = AutoBuffer::default();
 
-        match self.codec.lock() {
-            Ok(lock) => {
-                let (status, cmd_id, task_id, package_len) =
-                    lock.borrow()
-                        .decode(recv_buffer, &mut body_buffer, &mut extend_buffer);
+        let mut codec = self.codec.lock().await;
+        let (status, cmd_id, task_id, package_len) =
+            codec.decode(recv_buffer, &mut body_buffer, &mut extend_buffer);
 
-                match status {
-                    long_link::DecodeStatus::Continue => {}
-                    long_link::DecodeStatus::Fail => {
-                        return false;
-                    }
-                    long_link::DecodeStatus::Ok => {
-                        println!("try_decode: {:?} {:?} {}", cmd_id, task_id, package_len);
-                    }
-                }
-            }
-            Err(_) => {
+        match status {
+            long_link::DecodeStatus::Continue => {}
+            long_link::DecodeStatus::Fail => {
                 return false;
+            }
+            long_link::DecodeStatus::Ok => {
+                println!("try_decode: {:?} {:?} {}", cmd_id, task_id, package_len);
             }
         }
 

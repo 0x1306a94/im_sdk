@@ -33,17 +33,44 @@ async fn process(stream: TcpStream) {
 
     loop {
         tokio::select! {
-            _ = read_half.readable() => {
-                if !do_read(&mut read_half) {
-                    return ;
+            value = read_half.readable() => {
+                println!("readable: {:?}", value);
+                match value {
+                    Ok(_) => {
+                        if !do_read(&mut read_half) {
+                            return ;
+                        }
+                    },
+                    Err(ref e) => match e.kind() {
+                        io::ErrorKind::BrokenPipe => {
+                            println!("连接断开...");
+                            return;
+                        },
+                        _ => {}
+                    },
+                    Err(_) => {},
                 }
-            },
-            _ = write_half.writable() => {
-            //    if !do_write(&mut write_half) {
-            //     return ;
-            //    }
 
             },
+            value = write_half.writable() => {
+                println!("writable: {:?}", value);
+                // match value {
+                //     Ok(_) => {
+                //         if !do_write(&mut read_half) {
+                //             return ;
+                //         }
+                //     },
+                //     Err(ref e) => match e.kind() {
+                //         io::ErrorKind::BrokenPipe => {
+                //             println!("连接断开...");
+                //             return;
+                //         },
+                //         _ => {}
+                //     },
+                //     Err(_) => {},
+                // }
+
+            }
 
         }
     }

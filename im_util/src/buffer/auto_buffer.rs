@@ -21,6 +21,36 @@ pub struct AutoBuffer {
 }
 
 impl AutoBuffer {
+    fn grow(&mut self, size: usize) {
+        let old_capacity = self.capacity;
+        if size < old_capacity {
+            return;
+        }
+
+        let new_capacity =
+            ((size + self.alloc_unit_size - 1) / self.alloc_unit_size) * self.alloc_unit_size;
+        unsafe {
+            // 分配新空间
+            let new_layout = Layout::array::<u8>(new_capacity).unwrap();
+            let new_ptr = alloc(new_layout);
+            if !new_ptr.is_null() && !self.buf_ptr.is_null() {
+                // 拷贝旧值
+                std::ptr::copy(self.buf_ptr, new_ptr, old_capacity);
+            }
+
+            // 释放旧空间
+            if !self.buf_ptr.is_null() {
+                let old_layout = Layout::array::<u8>(old_capacity).unwrap();
+                dealloc(self.buf_ptr, old_layout);
+            }
+
+            self.buf_ptr = new_ptr;
+            self.capacity = new_capacity;
+        }
+    }
+}
+
+impl AutoBuffer {
     pub fn new(alloc_unit_size: usize) -> Self {
         AutoBuffer {
             pos: 0,
@@ -32,34 +62,9 @@ impl AutoBuffer {
     }
 
     pub fn new_from(src: &[u8]) -> Self {
-        let mut buf_ptr = std::ptr::null_mut();
-        if !src.is_empty() {
-            let layout = Layout::array::<u8>(src.len()).unwrap();
-            buf_ptr = unsafe { alloc(layout) };
-        }
-
-        AutoBuffer {
-            pos: 0,
-            capacity: src.len(),
-            len: src.len(),
-            buf_ptr: buf_ptr,
-            alloc_unit_size: DEFAULT_UNIT_SIZE,
-        }
-    }
-}
-
-impl Drop for AutoBuffer {
-    fn drop(&mut self) {
-        if self.buf_ptr.is_null() {
-            return;
-        }
-
-        println!("AutoBuffer<{:p}> drop capacity {}", self, self.capacity);
-        unsafe {
-            let layout = Layout::array::<u8>(self.capacity).unwrap();
-            dealloc(self.buf_ptr, layout);
-            self.buf_ptr = std::ptr::null_mut();
-        }
+        let mut buf = Self::default();
+        buf.write(src);
+        buf
     }
 }
 
@@ -95,8 +100,14 @@ impl AutoBuffer {
         self.seek(src.len(), Seek::Cur);
     }
 
+    pub fn write_from(&mut self, src: &AutoBuffer) {
+        let bytes = src.as_slice(0);
+        self.write_at_pos(self.pos, bytes);
+        self.seek(src.len(), Seek::Cur);
+    }
+
     pub fn write_at_pos(&mut self, pos: usize, src: &[u8]) {
-        if src.len() == 0 {
+        if src.is_empty() {
             return;
         }
         // 扩容
@@ -115,12 +126,21 @@ impl AutoBuffer {
         out
     }
 
+    pub fn read_to_buffer(&mut self, out_buf: &mut AutoBuffer, len: usize) -> usize {
+        let (read_len, out) = self.read_at_pos(self.pos, len);
+        self.seek(read_len, Seek::Cur);
+        out_buf.write(&out);
+        read_len
+    }
+
     pub fn read_at_pos(&self, pos: usize, len: usize) -> (usize, Vec<u8>) {
         assert!(!self.buf_ptr.is_null());
         assert!(pos <= self.len);
 
-        let mut read_len = self.len - pos;
-        read_len = min(read_len, len);
+        let read_len = match self.len.checked_sub(pos) {
+            Some(v) => min(v, len),
+            None => 0,
+        };
 
         let mut out = Vec::<u8>::with_capacity(read_len);
 
@@ -138,18 +158,19 @@ impl AutoBuffer {
         (read_len, out)
     }
 
-    pub fn get_conetnt(&self, offset: usize) -> &[u8] {
+    pub fn as_slice(&self, offset: usize) -> &[u8] {
         unsafe {
             let src = self.buf_ptr.offset(offset as isize) as *const u8;
-            let len = self.len - offset;
+            let len = self.len.checked_sub(offset).unwrap_or(0);
             slice::from_raw_parts(src, len)
         }
     }
 
-    pub fn get_pos_content(&self) -> &[u8] {
+    pub fn as_pos_slice(&self) -> &[u8] {
         unsafe {
             let src = self.buf_ptr.offset(self.pos as isize) as *const u8;
-            let len = self.len - self.pos;
+            let len = self.len.checked_sub(self.pos).unwrap_or(0);
+
             slice::from_raw_parts(src, len)
         }
     }
@@ -169,33 +190,26 @@ impl Default for AutoBuffer {
     }
 }
 
-impl AutoBuffer {
-    fn grow(&mut self, size: usize) {
-        let old_capacity = self.capacity;
-        if size < old_capacity {
+impl Drop for AutoBuffer {
+    fn drop(&mut self) {
+        if self.buf_ptr.is_null() {
             return;
         }
 
-        let new_capacity =
-            ((size + self.alloc_unit_size - 1) / self.alloc_unit_size) * self.alloc_unit_size;
+        // println!("AutoBuffer<{:p}> drop capacity {}", self, self.capacity);
         unsafe {
-            // 分配新空间
-            let new_layout = Layout::array::<u8>(new_capacity).unwrap();
-            let new_ptr = alloc(new_layout);
-            if !new_ptr.is_null() && !self.buf_ptr.is_null() {
-                // 拷贝旧值
-                std::ptr::copy(self.buf_ptr, new_ptr, old_capacity);
-            }
-
-            // 释放旧空间
-            if !self.buf_ptr.is_null() {
-                let old_layout = Layout::array::<u8>(old_capacity).unwrap();
-                dealloc(self.buf_ptr, old_layout);
-            }
-
-            self.buf_ptr = new_ptr;
-            self.capacity = new_capacity;
+            let layout = Layout::array::<u8>(self.capacity).unwrap();
+            dealloc(self.buf_ptr, layout);
+            self.buf_ptr = std::ptr::null_mut();
         }
+    }
+}
+
+impl Clone for AutoBuffer {
+    fn clone(&self) -> Self {
+        let mut buf = Self::default();
+        buf.write_from(self);
+        buf
     }
 }
 
@@ -208,16 +222,14 @@ mod tests {
     fn case_into() {
         let data: Vec<u8> = vec![12, 18, 19];
         let buf: AutoBuffer = (&data[..]).into();
-        println!("{:?}", buf);
-        println!("{:?}", data);
+        assert_eq!(&data, buf.as_slice(0));
     }
 
     #[test]
     fn case_new_from() {
         let data: Vec<u8> = vec![12, 18, 19];
         let buf = AutoBuffer::new_from(&data);
-        println!("{:?}", buf);
-        println!("{:?}", data);
+        assert_eq!(&data, buf.as_slice(0));
     }
 
     #[test]
@@ -226,13 +238,46 @@ mod tests {
         let id: i32 = 10;
         let bytes = id.to_le_bytes();
         buf.write(&bytes);
-        println!("case_write: {:?}", buf);
 
-        let inner_buffer = buf.read(bytes.len());
-        assert_eq!(&[0u8; 0], &inner_buffer[..]);
+        let buf_bytes = buf.read(bytes.len());
+        assert_eq!(&[0u8; 0], &buf_bytes[..]);
 
         buf.seek(0, Seek::Start);
-        let inner_buffer = buf.read(bytes.len());
-        assert_eq!(bytes, &inner_buffer[..]);
+        let buf_bytes = buf.read(bytes.len());
+        assert_eq!(bytes, &buf_bytes[..]);
+    }
+
+    #[test]
+    fn case_write_from_auto_buffer() {
+        let mut buf = AutoBuffer::default();
+        let id: i32 = 10;
+        let bytes = id.to_le_bytes();
+        buf.write(&bytes);
+
+        let mut buf2 = AutoBuffer::default();
+        buf2.write_from(&buf);
+
+        assert_eq!(buf.as_slice(0), buf2.as_slice(0));
+    }
+    #[test]
+    fn case_read_to_buffer() {
+        let data: Vec<u8> = vec![12, 18, 19];
+        let mut buf = AutoBuffer::new_from(&data);
+        buf.seek(0, Seek::Start);
+
+        let mut buf2 = AutoBuffer::default();
+        let read_len = buf.read_to_buffer(&mut buf2, data.len());
+        assert_eq!(read_len, data.len());
+        assert_eq!(&data, buf2.as_slice(0));
+    }
+
+    #[test]
+    fn case_clone() {
+        let data: Vec<u8> = vec![12, 18, 19];
+        let buf = AutoBuffer::new_from(&data);
+        assert_eq!(&data, buf.as_slice(0));
+
+        let cloned_buf = buf.clone();
+        assert_eq!(&data, cloned_buf.as_slice(0));
     }
 }

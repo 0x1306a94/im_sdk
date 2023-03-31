@@ -100,6 +100,16 @@ impl AutoBuffer {
         self.seek(src.len(), Seek::Cur);
     }
 
+    pub fn write_at_seek(&mut self, seek: Seek, src: &[u8]) {
+        let pos: usize;
+        match seek {
+            Seek::Start => pos = 0,
+            Seek::Cur => pos = self.pos,
+            Seek::End => pos = self.len,
+        }
+        self.write_at_pos(pos, src);
+    }
+
     pub fn write_from(&mut self, src: &AutoBuffer) {
         let bytes = src.as_slice(0);
         self.write_at_pos(self.pos, bytes);

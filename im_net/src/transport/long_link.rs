@@ -10,8 +10,9 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
 
 use super::endpoint;
-use crate::codec::long_link;
-use crate::codec::long_link::CmdId;
+
+use im_codec;
+use im_codec::long_link::CmdId;
 
 use im_util::buffer::AutoBuffer;
 
@@ -39,7 +40,7 @@ pub(crate) struct LongLink {
     resp_tx: Sender<LongLinkResponse>,
     pub(crate) shutdown_tx: Sender<()>,
     shutdown_rx: Receiver<()>,
-    codec: Arc<Mutex<Box<dyn long_link::Codec>>>,
+    codec: Arc<Mutex<Box<dyn im_codec::long_link::Codec>>>,
     available: bool,
 
     identify_buffers: Vec<(AutoBuffer, CmdId)>,
@@ -47,7 +48,7 @@ pub(crate) struct LongLink {
 
 impl LongLink {
     pub(crate) fn new(
-        codec: Arc<Mutex<Box<dyn long_link::Codec>>>,
+        codec: Arc<Mutex<Box<dyn im_codec::long_link::Codec>>>,
         resp_tx: Sender<LongLinkResponse>,
     ) -> Self {
         let (req_tx, req_rx) = channel(100);
@@ -132,7 +133,7 @@ impl LongLink {
         match read_half.read_buf(&mut buffer).await {
             Ok(read_len) => {
                 recv_buffer.write(&buffer[..read_len]);
-                return self.try_decode(recv_buffer).await;
+                self.try_decode(recv_buffer).await;
             }
             Err(e) => {
                 eprintln!("error: {:?}", e);
@@ -162,8 +163,8 @@ impl LongLink {
                 let mut out_buffer = AutoBuffer::default();
                 let extend_buffer = AutoBuffer::default();
                 codec.encode(
-                    &value.1,
-                    &long_link::IDENTIFY_CHECKER_TASK_ID,
+                    value.1,
+                    im_codec::long_link::IDENTIFY_CHECKER_TASK_ID,
                     &value.0,
                     &extend_buffer,
                     &mut out_buffer,
@@ -192,16 +193,16 @@ impl LongLink {
         let mut body_buffer = AutoBuffer::default();
         let mut extend_buffer = AutoBuffer::default();
 
-        let mut codec = self.codec.lock().await;
+        let codec = self.codec.lock().await;
         let (status, cmd_id, task_id, package_len) =
             codec.decode(recv_buffer, &mut body_buffer, &mut extend_buffer);
 
         match status {
-            long_link::DecodeStatus::Continue => {}
-            long_link::DecodeStatus::Fail => {
+            im_codec::long_link::DecodeStatus::Continue => {}
+            im_codec::long_link::DecodeStatus::Fail => {
                 return false;
             }
-            long_link::DecodeStatus::Ok => {
+            im_codec::long_link::DecodeStatus::Ok => {
                 println!("try_decode: {:?} {:?} {}", cmd_id, task_id, package_len);
             }
         }

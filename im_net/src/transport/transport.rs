@@ -6,8 +6,6 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
 
-use crate::codec;
-
 use super::callback;
 use super::endpoint;
 use super::identify_mode;
@@ -16,14 +14,15 @@ use super::long_link;
 use super::net_source;
 use super::short_link;
 
+use im_codec;
 use im_util::buffer::AutoBuffer;
 
 pub struct Transport {
     source: Arc<Mutex<net_source::NetSource>>,
     callback: Arc<Mutex<Box<dyn callback::Callback>>>,
 
-    long_link_codec: Arc<Mutex<Box<dyn codec::long_link::Codec>>>,
-    short_link_codec: Arc<Mutex<Box<dyn codec::short_link::Codec>>>,
+    long_link_codec: Arc<Mutex<Box<dyn im_codec::long_link::Codec>>>,
+    short_link_codec: Arc<Mutex<Box<dyn im_codec::short_link::Codec>>>,
 
     long_link_establish: bool,
     long_link_req_tx: Option<Sender<long_link::LongLinkRequest>>,
@@ -33,8 +32,8 @@ pub struct Transport {
 
 impl Transport {
     pub fn new(
-        long_link_codec: Box<dyn codec::long_link::Codec>,
-        short_link_codec: Box<dyn codec::short_link::Codec>,
+        long_link_codec: Box<dyn im_codec::long_link::Codec>,
+        short_link_codec: Box<dyn im_codec::short_link::Codec>,
         callback: Box<dyn callback::Callback>,
     ) -> Self {
         let source = Arc::new(Mutex::new(net_source::NetSource::new()));
@@ -134,7 +133,7 @@ mod tests {
     use super::*;
     use crate::transport::endpoint;
     use crate::transport::*;
-    use codec::long_link::CmdId;
+    use im_codec::long_link::CmdId;
     use im_util::buffer::AutoBuffer;
     use tokio::runtime::Builder as RuntimeBuilder;
 
@@ -145,7 +144,7 @@ mod tests {
             &mut self,
             identify_buffer: &mut AutoBuffer,
         ) -> (identify_mode::Mode, CmdId) {
-            (identify_mode::Mode::Never, CmdId(0))
+            (identify_mode::Mode::Never, 0)
         }
 
         fn verify_long_link_identify(
@@ -155,35 +154,35 @@ mod tests {
             identify_step::Step::Ok
         }
     }
-    // #[test]
-    // fn case_connect() {
-    //     let endpoint = endpoint::Endpoint::new("127.0.0.1".into(), 9999);
+    #[test]
+    fn case_connect() {
+        let endpoint = endpoint::Endpoint::new("127.0.0.1".into(), 9999);
 
-    //     let long_link_codec = Box::new(codec::long_link::DefaultLongLinkCodec::new(
-    //         codec::long_link::DEFAULT_VERSION,
-    //     ));
+        let long_link_codec = Box::new(im_codec::long_link::DefaultCodec::new(
+            im_codec::long_link::DEFAULT_VERSION,
+        ));
 
-    //     let short_link_codec = Box::new(codec::short_link::DefaultShortLinkCodec::new(
-    //         codec::short_link::DEFAULT_VERSION,
-    //     ));
+        let short_link_codec = Box::new(im_codec::short_link::DefaultCodec::new(
+            im_codec::short_link::DEFAULT_VERSION,
+        ));
 
-    //     let cb = Box::new(MockCallback {});
-    //     let mut transport = Transport::new(long_link_codec, short_link_codec, cb);
+        let cb = Box::new(MockCallback {});
+        let mut transport = Transport::new(long_link_codec, short_link_codec, cb);
 
-    //     let rt = RuntimeBuilder::new_multi_thread()
-    //         .enable_all()
-    //         .thread_name("rnet-thread")
-    //         .build()
-    //         .unwrap();
+        let rt = RuntimeBuilder::new_multi_thread()
+            .enable_all()
+            .thread_name("rnet-thread")
+            .build()
+            .unwrap();
 
-    //     rt.block_on(async move {
-    //         transport.set_long_link_endpoint(endpoint).await;
-    //         transport.makesure_long_link_connected().await;
+        rt.block_on(async move {
+            transport.set_long_link_endpoint(endpoint).await;
+            transport.makesure_long_link_connected().await;
 
-    //         _ = tokio::spawn(async move {
-    //             transport.recv_response().await;
-    //         })
-    //         .await;
-    //     });
-    // }
+            _ = tokio::spawn(async move {
+                transport.recv_response().await;
+            })
+            .await;
+        });
+    }
 }

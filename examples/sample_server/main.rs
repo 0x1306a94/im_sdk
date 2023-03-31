@@ -26,6 +26,8 @@ async fn main() {
 async fn process(stream: TcpStream) {
     // let mut connection = Connection::new(socket);
 
+    // connection.run_read_write().await;
+
     let mut stream = stream;
     println!("{:?}", stream);
 
@@ -38,6 +40,7 @@ async fn process(stream: TcpStream) {
                 match value {
                     Ok(_) => {
                         if !do_read(&mut read_half) {
+                            println!("连接断开...");
                             return ;
                         }
                     },
@@ -54,21 +57,6 @@ async fn process(stream: TcpStream) {
             },
             value = write_half.writable() => {
                 println!("writable: {:?}", value);
-                // match value {
-                //     Ok(_) => {
-                //         if !do_write(&mut read_half) {
-                //             return ;
-                //         }
-                //     },
-                //     Err(ref e) => match e.kind() {
-                //         io::ErrorKind::BrokenPipe => {
-                //             println!("连接断开...");
-                //             return;
-                //         },
-                //         _ => {}
-                //     },
-                //     Err(_) => {},
-                // }
 
             }
 
@@ -81,7 +69,7 @@ fn do_read(read_half: &mut ReadHalf) -> bool {
     match read_half.try_read(&mut buf) {
         Ok(read_len) => {
             if read_len == 0 {
-                return true;
+                return false;
             }
             println!("read: {}", read_len);
         }

@@ -52,6 +52,8 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 name = "examples"
 version = "0.0.0"
 dependencies = [
+ "bytes",
+ "im_codec",
  "im_net",
  "im_util",
  "tokio",
@@ -73,10 +75,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "im_codec"
+version = "0.1.0"
+dependencies = [
+ "im_util",
+]
+
+[[package]]
 name = "im_net"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "im_codec",
  "im_util",
  "tokio",
  "tokio-test",

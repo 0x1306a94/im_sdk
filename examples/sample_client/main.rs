@@ -1,4 +1,5 @@
-use im_net::{codec, endpoint, Transport};
+use im_codec;
+use im_net::{endpoint, Transport};
 use tokio;
 
 mod callback;
@@ -8,12 +9,12 @@ use callback::TCB;
 async fn main() {
     let endpoint = endpoint::Endpoint::new("127.0.0.1".into(), 9999);
 
-    let long_link_codec = Box::new(codec::long_link::DefaultLongLinkCodec::new(
-        codec::long_link::DEFAULT_VERSION,
+    let long_link_codec = Box::new(im_codec::long_link::DefaultCodec::new(
+        im_codec::long_link::DEFAULT_VERSION,
     ));
 
-    let short_link_codec = Box::new(codec::short_link::DefaultShortLinkCodec::new(
-        codec::short_link::DEFAULT_VERSION,
+    let short_link_codec = Box::new(im_codec::short_link::DefaultCodec::new(
+        im_codec::short_link::DEFAULT_VERSION,
     ));
 
     let cb = Box::new(TCB {});

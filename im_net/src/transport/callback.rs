@@ -1,7 +1,7 @@
 use super::identify_mode;
 use super::identify_step;
 
-use crate::codec::long_link::CmdId;
+use im_codec::long_link::CmdId;
 use im_util::buffer::AutoBuffer;
 
 pub trait Callback: Send {

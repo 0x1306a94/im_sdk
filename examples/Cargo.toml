@@ -11,6 +11,9 @@ tokio = {version = "1.27.0", features = ["full"]}
 
 im_net.workspace = true
 im_util.workspace = true
+im_codec.workspace = true
+
+bytes = "1.4.0"
 
 [[example]]
 name = "sample_server"

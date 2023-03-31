@@ -1,4 +1,4 @@
-use im_net::codec::long_link::CmdId;
+use im_codec::long_link::CmdId;
 use im_net::transport::callback;
 use im_net::transport::identify_mode;
 use im_net::transport::identify_step;
@@ -14,7 +14,7 @@ impl callback::Callback for TCB {
         let buf = vec![1_u8, 2_u8, 3_u8, 4_u8];
         println!("填充鉴权数据...");
         identify_buffer.write(&buf);
-        (identify_mode::Mode::Now, CmdId(1))
+        (identify_mode::Mode::Now, 1)
     }
 
     fn verify_long_link_identify(&mut self, response_buffer: &AutoBuffer) -> identify_step::Step {

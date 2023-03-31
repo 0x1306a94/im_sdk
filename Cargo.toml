@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "im_util",
+    "im_codec",
     "im_net",
 
     "examples",
@@ -13,3 +14,4 @@ edition = "2021"
 [workspace.dependencies]
 im_net = { path = "./im_net" }
 im_util = { path = "./im_util" }
+im_codec = { path = "./im_codec" }

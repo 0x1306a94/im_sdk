@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 use super::net_source;
-use crate::codec::short_link;
+use im_codec::short_link;
 
 pub(crate) struct ShortLink {
     source: Arc<RefCell<net_source::NetSource>>,

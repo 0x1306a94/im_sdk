@@ -46,7 +46,7 @@ pub trait Codec: Send {
     ) -> (DecodeStatus, CmdId, TaskId, usize);
 }
 
-#[repr(C, align(1))]
+#[repr(C, packed)]
 pub struct MsgHeader {
     pub version: u32,
     pub cmd_id: CmdId,
@@ -78,10 +78,28 @@ impl TryFrom<&[u8]> for MsgHeader {
             return Err(ParseHeaderError::Underlength);
         }
 
-        let header: MsgHeader = unsafe {
-            let src = &bytes[..DEFAULT_HEADER_LEN];
-            std::mem::transmute(src)
-        };
+        let mut header = MsgHeader::default();
+
+        let mut buffer = [0u8; 4];
+        buffer.copy_from_slice(&bytes[..4]);
+        header.version = u32::from_be_bytes(buffer);
+
+        buffer.copy_from_slice(&bytes[4..8]);
+        header.cmd_id = u32::from_be_bytes(buffer);
+
+        buffer.copy_from_slice(&bytes[8..12]);
+        header.task_id = u32::from_be_bytes(buffer);
+
+        let mut buffer = [0u8; 2];
+        buffer.copy_from_slice(&bytes[12..14]);
+        header.body_len = u16::from_be_bytes(buffer);
+
+        if cfg!(target_endian = "little") {
+            header.version = header.version.to_le();
+            header.cmd_id = header.cmd_id.to_le();
+            header.task_id = header.task_id.to_le();
+            header.body_len = header.body_len.to_le();
+        }
 
         if header.version != DEFAULT_VERSION {
             return Err(ParseHeaderError::VersionMismatch);
@@ -92,16 +110,12 @@ impl TryFrom<&[u8]> for MsgHeader {
 }
 
 pub struct DefaultCodec {
-    header_len: usize,
     version: u32,
 }
 
 impl DefaultCodec {
     pub fn new(version: u32) -> Self {
-        DefaultCodec {
-            header_len: DEFAULT_HEADER_LEN,
-            version: version,
-        }
+        DefaultCodec { version: version }
     }
 }
 

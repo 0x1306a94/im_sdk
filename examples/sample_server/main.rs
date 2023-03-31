@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::io;
 use tokio::io::AsyncReadExt;
 use tokio::net::tcp::{ReadHalf, WriteHalf};
@@ -7,7 +8,10 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
+use im_codec::long_link::ParseHeaderError;
+
 mod connection;
+mod frame;
 
 use connection::Connection;
 
@@ -18,88 +22,25 @@ async fn main() {
     loop {
         let (stream, _) = listener.accept().await.unwrap();
         tokio::spawn(async move {
-            process(stream).await;
+            _ = process(stream).await;
         });
     }
 }
 
-async fn process(stream: TcpStream) {
-    // let mut connection = Connection::new(socket);
-
-    // connection.run_read_write().await;
-
-    let mut stream = stream;
-    println!("{:?}", stream);
-
-    let (mut read_half, mut write_half) = stream.split();
+async fn process(stream: TcpStream) -> Result<(), ParseHeaderError> {
+    println!("accept: {:?}", stream);
+    let mut connection = Connection::new(stream);
 
     loop {
-        tokio::select! {
-            value = read_half.readable() => {
-                println!("readable: {:?}", value);
-                match value {
-                    Ok(_) => {
-                        if !do_read(&mut read_half) {
-                            println!("连接断开...");
-                            return ;
-                        }
-                    },
-                    Err(ref e) => match e.kind() {
-                        io::ErrorKind::BrokenPipe => {
-                            println!("连接断开...");
-                            return;
-                        },
-                        _ => {}
-                    },
-                    Err(_) => {},
-                }
+        let maybe_frame = connection.read_frame().await?;
 
-            },
-            value = write_half.writable() => {
-                println!("writable: {:?}", value);
+        let frame = match maybe_frame {
+            Some(frame) => frame,
+            None => return Ok(()),
+        };
 
-            }
-
-        }
-    }
-}
-
-fn do_read(read_half: &mut ReadHalf) -> bool {
-    let mut buf = [0u8; 10];
-    match read_half.try_read(&mut buf) {
-        Ok(read_len) => {
-            if read_len == 0 {
-                return false;
-            }
-            println!("read: {}", read_len);
-        }
-        Err(ref e) => match e.kind() {
-            io::ErrorKind::BrokenPipe => {
-                println!("连接断开...");
-                return false;
-            }
-            _ => {}
-        },
-        Err(_) => {}
+        println!("frame: {:?}", frame);
     }
 
-    true
-}
-
-fn do_write(write_half: &mut WriteHalf) -> bool {
-    match write_half.try_write(b"hello wolrd") {
-        Ok(write_len) => {
-            println!("write: {:?}", write_len);
-        }
-        Err(ref e) => match e.kind() {
-            io::ErrorKind::BrokenPipe => {
-                println!("连接断开...");
-                return false;
-            }
-            _ => {}
-        },
-        Err(e) => {}
-    }
-
-    true
+    Ok(())
 }
